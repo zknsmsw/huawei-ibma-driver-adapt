@@ -347,14 +347,19 @@ void kbox_printk_exit(void)
         return;
     }
 
+    /* Unregister (and synchronize) the console FIRST: after this returns, no writer can
+       still be inside kbox_printk_info_write(), so the buffers can be freed safely.
+       The old order (free first, unregister after) was a use-after-free window. */
+    ret = unregister_console(&g_printk_console);
+    if (ret != 0) {
+        KBOX_MSG("unregister_console failed!\n");
+    }
+
+    g_printk_init_ok = KBOX_FALSE;
+
     kfree(g_printk_info_buf);
     g_printk_info_buf = NULL;
 
     kfree(g_printk_info_buf_tmp);
     g_printk_info_buf_tmp = NULL;
-
-    ret = unregister_console(&g_printk_console);
-    if (ret != 0) {
-        KBOX_MSG("unregister_console failed!\n");
-    }
 }

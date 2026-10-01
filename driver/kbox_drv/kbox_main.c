@@ -86,6 +86,13 @@ static int kbox_printk_proc_init(void)
     return KBOX_TRUE;
 }
 
+/* /proc/kbox is the "kbox is loaded" marker; it must be removed on unload, otherwise
+   a later insmod sees a stale entry and skips first-load initialisation. */
+static void kbox_printk_proc_exit(void)
+{
+    remove_proc_entry(KBOX_ROOT_ENTRY_NAME, NULL);
+}
+
 int __init kbox_init(void)
 {
     int ret = KBOX_TRUE;
@@ -145,6 +152,7 @@ int __init kbox_init(void)
     return KBOX_TRUE;
 
 fail5:
+    kbox_printk_proc_exit();
 fail4:
 fail3:
 #ifdef CONFIG_X86
@@ -167,6 +175,7 @@ void __exit kbox_cleanup(void)
 #endif
     kbox_unregister_hook();
     kbox_panic_exit();
+    kbox_printk_proc_exit();
     kbox_printk_exit();
 }
 

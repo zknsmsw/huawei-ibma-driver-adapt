@@ -29,9 +29,10 @@
 #include "kbox_ram_image.h"
 #include "kbox_ram_op.h"
 
-#ifndef VM_RESERVED
-#define VM_RESERVED 0x00080000
-#endif
+/* NOTE: VM_RESERVED was removed from the kernel in 3.11 and its bit was reused for
+   other flags (0x00080000 is VM_LOCKONFAULT in modern kernels), so the old local
+   fallback definition was actively harmful. The mmap path now uses the proper MMIO
+   VMA flags (VM_IO | VM_DONTEXPAND | VM_DONTDUMP) instead. */
 
 #if (KERNEL_VERSION(6, 4, 0) <= LINUX_VERSION_CODE)
 static DEFINE_SPINLOCK(g_kbox_super_block_lock);
@@ -952,11 +953,9 @@ int kbox_mmap_ram(struct file *pfile, struct vm_area_struct *vma, enum kbox_sect
     }
 
     #if defined(LINUX_VERSION_CODE) && (KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE)
-    vma->vm_flags |= VM_RESERVED;
-    vma->vm_flags |= VM_IO;
+    vma->vm_flags |= VM_IO | VM_DONTEXPAND | VM_DONTDUMP;
     #else
-    vm_flags_set(vma, VM_RESERVED);
-    vm_flags_set(vma, VM_IO);
+    vm_flags_set(vma, VM_IO | VM_DONTEXPAND | VM_DONTDUMP);
     #endif
 
     ret = remap_pfn_range(vma, vma->vm_start, (unsigned long)(kbox_section_phy_addr >> PAGE_SHIFT), vm_size,

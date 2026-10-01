@@ -353,14 +353,17 @@ enroll 进固件信任链。任何 DKMS 外挂模块（ZFS 等）在同样环境
 
 ---
 
-## 10. 已知的无害告警
+## 10. 已知的无害提示
 
-| 告警 | 说明 |
+| 提示 | 说明 |
 |---|---|
-| 编译时 `"VM_ARCH_1" redefined` / `"VM_DONTDUMP" redefined` / `"VM_MERGEABLE" redefined` | 上游 `edma_host.h` 里的一段死代码（无任何引用）重复定义了内核宏。**只是警告**，故本仓库保持最小改动未删除。 |
-| 编译时 `no previous prototype for 'wait_done_dma_queue'` | `-Wmissing-prototypes` 警告，不致命。 |
 | `Skipping BTF generation for xxx.ko due to unavailability of vmlinux` | 外部模块缺少 vmlinux 时的正常提示，不影响加载。 |
-| dmesg `module verification failed ... tainting kernel` | 见 Q3，仅 taint 标记。 |
+| dmesg `module verification failed ... tainting kernel` | 见 [Q3](#9-常见问题faq)，仅 taint 标记，模块正常加载。 |
+
+> **v0.4.0-pve2 起**：编译过程已无 `VM_* redefined`、`-Wmissing-prototypes` 等告警；
+> 并额外修掉了 6 个运行时缺陷（`veth_tx` 非法返回值 + skb 泄漏、`alloc_netdev_mq` 未判空、
+> sysfs 早读空指针、`kbox` 控制台注销顺序、`VM_RESERVED` 标志位、`/proc/kbox` 未清理）。
+> 详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
@@ -385,7 +388,7 @@ enroll 进固件信任链。任何 DKMS 外挂模块（ZFS 等）在同样环境
 └── LICENSE-MulanPSL-2.0.txt      # Mulan PSL v2（driver/secure/）
 ```
 
-**改动清单**（9 个文件，详见 [`docs/ADAPTATION.md`](docs/ADAPTATION.md) 与 [`patches/`](patches/)）：
+**改动清单**（14 个文件，详见 [`docs/ADAPTATION.md`](docs/ADAPTATION.md) 与 [`patches/`](patches/)）：
 
 1. 5 个 `Makefile`：`EXTRA_CFLAGS` → `ccflags-y`，`stdarg.h` 探测路径补全；
 2. `edma_drv/Makefile`、`kbox_drv/Makefile`：新增"按目标内核头文件探测 API"的宏
@@ -393,7 +396,10 @@ enroll 进固件信任链。任何 DKMS 外挂模块（ZFS 等）在同样环境
 3. `edma_drv/bma_include.h`：`HAVE_TIMER_SETUP` 兼容 `timer_container_of`，显式包含 `<linux/timer.h>`；
 4. `edma_drv/edma_host.c`：`hrtimer_init` / `del_timer_sync` 新旧 API 双分支；
 5. `kbox_drv/kbox_mce.c`：`rdmsrl_safe` → `rdmsrq_safe` 双分支；
-6. `veth_drv/veth_hb.c`：新增类型正确的 `netdev_tx_t veth_tx_ndo()` 包装（行为不变）。
+6. `veth_drv/veth_hb.c`：新增类型正确的 `netdev_tx_t veth_tx_ndo()` 包装（行为不变）；
+7. **缺陷修复**（v0.4.0-pve2）：`veth_tx` 非法返回值 + skb 泄漏、`alloc_netdev_mq` 未判空、
+   sysfs 早读空指针、`kbox` 控制台注销顺序（use-after-free）、`kbox` 的 `VM_RESERVED` 标志位、
+   `/proc/kbox` 未清理；同时删除 `edma_host.h` 的死代码 `VM_*` 段、`wait_done_dma_queue` 改 `static`。
 
 **许可**
 

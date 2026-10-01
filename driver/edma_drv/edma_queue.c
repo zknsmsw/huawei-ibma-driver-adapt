@@ -329,7 +329,7 @@ static void init_dma(void)
     enable_dma_queue(ENABLE);
 }
 
-s32 wait_done_dma_queue(unsigned long timeout)
+static s32 wait_done_dma_queue(unsigned long timeout)
 {
     struct dma_ch_cq_s *p_cur_last_cq;
     struct dma_ch_cq_s *p_dma_cq;

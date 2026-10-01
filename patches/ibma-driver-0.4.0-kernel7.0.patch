@@ -205,6 +205,63 @@
  
  #else
      kthread_stop(edma_host->edma_thread);
+--- a/iBMA_Driver-0.4.0/edma_drv/edma_host.h
++++ b/iBMA_Driver-0.4.0/edma_drv/edma_host.h
+@@ -41,37 +41,12 @@
+ #define from_timer(var, callback_timer, timer_fieldname) container_of(callback_timer, typeof(*var), timer_fieldname)
+ #endif
+ 
+-/* vm_flags in vm_area_struct, see mm_types.h. */
+-#define VM_NONE 0x00000000
+-#define VM_ARCH_1 0x01000000    /* Architecture-specific flag */
+-#define VM_DONTDUMP 0x04000000  /* Do not include in the core dump */
+-#define VM_MERGEABLE 0x80000000 /* KSM may merge identical pages */
+-
+-#if defined(CONFIG_X86)
+-/* PAT reserves whole VMA at once (x86) */
+-#define VM_PAT VM_ARCH_1
+-#elif defined(CONFIG_PPC)
+-#define VM_SAO VM_ARCH_1 /* Strong Access Ordering (powerpc) */
+-#elif defined(CONFIG_PARISC)
+-#define VM_GROWSUP VM_ARCH_1
+-#elif defined(CONFIG_METAG)
+-#define VM_GROWSUP VM_ARCH_1
+-#elif defined(CONFIG_IA64)
+-#define VM_GROWSUP VM_ARCH_1
+-#elif !defined(CONFIG_MMU)
+-#define VM_MAPPED_COPY VM_ARCH_1 /* T if mapped copy of data (nommu mmap) */
+-#endif
+-
+-#ifndef VM_GROWSUP
+-#define VM_GROWSUP VM_NONE
+-#endif
+-
+-/* Bits set in the VMA until the stack is in its final location */
+-#if (KERNEL_VERSION(6, 5, 0) <= LINUX_VERSION_CODE)
+-#define VM_STACK_INCOMPLETE_SETUP (VM_RAND_READ | VM_SEQ_READ | VM_STACK_EARLY)
+-#else
+-#define VM_STACK_INCOMPLETE_SETUP (VM_RAND_READ | VM_SEQ_READ)
+-#endif
++/*
++ * NOTE: an old block of VM_* re-definitions (VM_ARCH_1/VM_DONTDUMP/VM_MERGEABLE and the
++ * VM_PAT/VM_SAO/VM_GROWSUP/VM_STACK_INCOMPLETE_SETUP derivations) used to live here.
++ * Nothing in this driver referenced any of them, and re-defining the kernel's own macros
++ * only produced "redefined" warnings against include/linux/mm.h. Removed.
++ */
+ 
+ #define REG_PCIE1_DMAREAD_ENABLE 0xa18
+ #define SHIFT_PCIE1_DMAREAD_ENABLE 0
+--- a/iBMA_Driver-0.4.0/edma_drv/edma_queue.c
++++ b/iBMA_Driver-0.4.0/edma_drv/edma_queue.c
+@@ -329,7 +329,7 @@
+     enable_dma_queue(ENABLE);
+ }
+ 
+-s32 wait_done_dma_queue(unsigned long timeout)
++static s32 wait_done_dma_queue(unsigned long timeout)
+ {
+     struct dma_ch_cq_s *p_cur_last_cq;
+     struct dma_ch_cq_s *p_dma_cq;
 --- a/iBMA_Driver-0.4.0/kbox_drv/Makefile
 +++ b/iBMA_Driver-0.4.0/kbox_drv/Makefile
 @@ -17,13 +17,19 @@
@@ -266,6 +323,38 @@
  endif
  
  
+--- a/iBMA_Driver-0.4.0/kbox_drv/kbox_main.c
++++ b/iBMA_Driver-0.4.0/kbox_drv/kbox_main.c
+@@ -86,6 +86,13 @@
+     return KBOX_TRUE;
+ }
+ 
++/* /proc/kbox is the "kbox is loaded" marker; it must be removed on unload, otherwise
++   a later insmod sees a stale entry and skips first-load initialisation. */
++static void kbox_printk_proc_exit(void)
++{
++    remove_proc_entry(KBOX_ROOT_ENTRY_NAME, NULL);
++}
++
+ int __init kbox_init(void)
+ {
+     int ret = KBOX_TRUE;
+@@ -145,6 +152,7 @@
+     return KBOX_TRUE;
+ 
+ fail5:
++    kbox_printk_proc_exit();
+ fail4:
+ fail3:
+ #ifdef CONFIG_X86
+@@ -167,6 +175,7 @@
+ #endif
+     kbox_unregister_hook();
+     kbox_panic_exit();
++    kbox_printk_proc_exit();
+     kbox_printk_exit();
+ }
+ 
 --- a/iBMA_Driver-0.4.0/kbox_drv/kbox_mce.c
 +++ b/iBMA_Driver-0.4.0/kbox_drv/kbox_mce.c
 @@ -187,7 +187,11 @@
@@ -280,6 +369,65 @@
          (void)kbox_dump_painc_info("mce: Unable to read msr %d!\n", ulmsr);
          ullv = 0;
      }
+--- a/iBMA_Driver-0.4.0/kbox_drv/kbox_printk.c
++++ b/iBMA_Driver-0.4.0/kbox_drv/kbox_printk.c
+@@ -347,14 +347,19 @@
+         return;
+     }
+ 
+-    kfree(g_printk_info_buf);
+-    g_printk_info_buf = NULL;
+-
+-    kfree(g_printk_info_buf_tmp);
+-    g_printk_info_buf_tmp = NULL;
+-
++    /* Unregister (and synchronize) the console FIRST: after this returns, no writer can
++       still be inside kbox_printk_info_write(), so the buffers can be freed safely.
++       The old order (free first, unregister after) was a use-after-free window. */
+     ret = unregister_console(&g_printk_console);
+     if (ret != 0) {
+         KBOX_MSG("unregister_console failed!\n");
+     }
+-}
++
++    g_printk_init_ok = KBOX_FALSE;
++
++    kfree(g_printk_info_buf);
++    g_printk_info_buf = NULL;
++
++    kfree(g_printk_info_buf_tmp);
++    g_printk_info_buf_tmp = NULL;
++}
+--- a/iBMA_Driver-0.4.0/kbox_drv/kbox_ram_op.c
++++ b/iBMA_Driver-0.4.0/kbox_drv/kbox_ram_op.c
+@@ -29,9 +29,10 @@
+ #include "kbox_ram_image.h"
+ #include "kbox_ram_op.h"
+ 
+-#ifndef VM_RESERVED
+-#define VM_RESERVED 0x00080000
+-#endif
++/* NOTE: VM_RESERVED was removed from the kernel in 3.11 and its bit was reused for
++   other flags (0x00080000 is VM_LOCKONFAULT in modern kernels), so the old local
++   fallback definition was actively harmful. The mmap path now uses the proper MMIO
++   VMA flags (VM_IO | VM_DONTEXPAND | VM_DONTDUMP) instead. */
+ 
+ #if (KERNEL_VERSION(6, 4, 0) <= LINUX_VERSION_CODE)
+ static DEFINE_SPINLOCK(g_kbox_super_block_lock);
+@@ -952,11 +953,9 @@
+     }
+ 
+     #if defined(LINUX_VERSION_CODE) && (KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE)
+-    vma->vm_flags |= VM_RESERVED;
+-    vma->vm_flags |= VM_IO;
++    vma->vm_flags |= VM_IO | VM_DONTEXPAND | VM_DONTDUMP;
+     #else
+-    vm_flags_set(vma, VM_RESERVED);
+-    vm_flags_set(vma, VM_IO);
++    vm_flags_set(vma, VM_IO | VM_DONTEXPAND | VM_DONTDUMP);
+     #endif
+ 
+     ret = remap_pfn_range(vma, vma->vm_start, (unsigned long)(kbox_section_phy_addr >> PAGE_SHIFT), vm_size,
 --- a/iBMA_Driver-0.4.0/veth_drv/Makefile
 +++ b/iBMA_Driver-0.4.0/veth_drv/Makefile
 @@ -11,9 +11,9 @@
@@ -341,7 +489,20 @@
  	mkdir -p $(PREFIX)/$(MODDIR)
 --- a/iBMA_Driver-0.4.0/veth_drv/veth_hb.c
 +++ b/iBMA_Driver-0.4.0/veth_drv/veth_hb.c
-@@ -1092,11 +1092,19 @@
+@@ -226,6 +226,12 @@
+         return 0;
+     }
+ 
++    /* The sysfs attribute exists as soon as the module is loaded, but the netdev is
++       only created later; without this guard -> netif_running(NULL) dereferences NULL. */
++    if (g_bspveth_dev.pnetdev == NULL) {
++        return 0;
++    }
++
+     GET_SYS_SECONDS(running_time);
+ 
+     running_time -= g_bspveth_dev.init_time;
+@@ -1092,11 +1098,19 @@
  
  };
  
@@ -362,3 +523,38 @@
      .ndo_do_ioctl = veth_ioctl,
      .ndo_get_stats = veth_stats,
      .ndo_set_mac_address = veth_mac_set,
+@@ -1223,8 +1237,16 @@
+     u32 ul_ret = 0;
+     int queue = 0;
+ 
++    /* netdev_tx_t contract: a non-OK value here (the old code returned the raw driver
++       error 0x0FFFF002) confuses the TX path, and the skb would be leaked. We drop the
++       packet and report it as consumed, like the !skb/!dev path below does.
++       NB: no INC_STATIS_TX() here - that macro dereferences ptx_queue[queue], which is
++       exactly what is NULL in this branch. */
+     if (g_bspveth_dev.ptx_queue[queue] == NULL) {
+-        return BSP_ERR_NULL_POINTER;
++        if (skb != NULL) {
++            dev_kfree_skb_any(skb);
++        }
++        return NETDEV_TX_OK;
+     }
+ 
+     VETH_LOG(DLOG_DEBUG, "===============enter==================\n");
+@@ -1503,10 +1525,16 @@
+ #else
+     netdev = alloc_netdev_mq(sizeof(struct tag_pcie_comm_priv), BSPVETH_DEV_NAME, veth_netdev_func_init, 1);
+ #endif
++    if (!netdev) {
++        VETH_LOG(DLOG_ERROR, "alloc_netdev_mq failed!\n");
++        return -ENOMEM;
++    }
++
+     /* register netdev */
+     l_ret = register_netdev(netdev);
+     if (l_ret < 0) {
+         VETH_LOG(DLOG_ERROR, "register_netdev failed!ret=%d\n", l_ret);
++        free_netdev(netdev);
+ 
+         return -ENODEV;
+     }

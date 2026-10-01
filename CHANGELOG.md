@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.4.0-pve2 (2026-10)
+
+第二轮：修掉代码审计发现的**真实缺陷**（不改协议/业务逻辑）。
+
+**运行时缺陷修复**
+
+1. `veth_tx()`：发送队列未就绪时返回 `BSP_ERR_NULL_POINTER`（非法的 `netdev_tx_t` 返回值）且**不释放 skb**
+   → 改为释放 skb 并返回 `NETDEV_TX_OK`（丢弃语义）。
+   注意：该分支**不能**调用 `INC_STATIS_TX()`，因为该宏会解引用正好为 NULL 的 `ptx_queue[queue]`。
+2. `veth_netdev_init()`：`alloc_netdev_mq()` 返回值未判空即 `register_netdev()`
+   → 增加判空并返回 `-ENOMEM`；`register_netdev()` 失败时补 `free_netdev()`，避免 netdev 泄漏。
+3. sysfs `statistics` 属性在 netdev 初始化完成前被读取，会经 `netif_running(NULL)` 触发空指针崩溃
+   → 增加 `pnetdev == NULL` 提前返回。
+4. `kbox_printk_exit()`：先 `kfree()` 缓冲区、后 `unregister_console()`，存在 use-after-free 窗口
+   → 改为**先注销控制台（并同步）再释放**，并把 `g_printk_init_ok` 置回 false。
+5. `kbox_ram_op.c`：`VM_RESERVED` 自 Linux 3.11 起已被删除且该位被复用（现代内核 `0x00080000` 是
+   `VM_LOCKONFAULT`），旧的本地兜底定义会写错标志位
+   → 改用 `VM_IO | VM_DONTEXPAND | VM_DONTDUMP`。
+6. `/proc/kbox` 是"kbox 已加载"的标记，但卸载时从未删除 → 卸载路径与初始化失败路径补
+   `remove_proc_entry()`，避免下次 `insmod` 误判为"已加载"而跳过首次初始化。
+
+**编译告警清理**
+
+7. 删除 `edma_host.h` 中一段**从未被引用**的 `VM_*` 重定义（消除 `"VM_ARCH_1" redefined` 等告警）。
+8. `wait_done_dma_queue()` 改为 `static`（消除 `-Wmissing-prototypes`）。
+
+**有意保留、未改动**（需要硬件/流量验证，或属于上游设计取舍）
+
+* `kbox` 在 panic/NMI 上下文里做时间读取 + `udelay` + MMIO 访问；MMIO 通过 `int*` 传递；
+  `/proc/kbox` 的读写权限模型 —— 改动风险高于收益。
+* `veth` 设置了 `watchdog_timeo` 但未实现 `ndo_tx_timeout` —— 正确实现需要真实流量复现。
+* `USE_DMA` 未定义导致 `DMA_NOT_LIST` 分支为空实现 —— 上游默认行为，改动会影响数据传输路径。
+
 ## v0.4.0-pve1 (2026-10)
 
 首个适配版本：在华为 `iBMA_Driver 0.4.0`（DKMS 源码）基础上适配 Linux 6.15+/6.17/7.0 内核。

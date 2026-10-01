@@ -73,16 +73,31 @@
 ## 设计原则
 
 1. **双分支**：所有 API 改动都保留旧内核分支，因此 4.15–6.14 与 6.15+ 都能编译。
-2. **最小改动**：不动任何业务逻辑，不"顺手"重构；只解决编译与类型问题。
-3. **故意留下的无害告警**（未修复，避免扩大改动面）：
-   * `VM_ARCH_1` / `VM_DONTDUMP` / `VM_MERGEABLE` 宏重定义 —— `edma_host.h` 里那段是死代码（无引用）。
-   * `wait_done_dma_queue` 无前置声明（`-Wmissing-prototypes`）。
-   两者都只是警告（内核未开 `CONFIG_WERROR`），不影响加载与运行。
+2. **最小改动**：不动业务逻辑与协议，只解决编译、类型与明确的缺陷。
+3. **尽量不引入无法验证的行为改动**：见文末"有意保留"。
 
-## 已知的运行时（非本次移植引入）问题
+## v0.4.0-pve2：缺陷修复（非编译问题）
 
-仅作提示，本仓库**未**修改行为：
+这些是代码审计发现、且**无需硬件即可判定为错**的问题：
 
-* `veth_tx()` 在发送队列为空时返回 `BSP_ERR_NULL_POINTER`（不是合法的 `netdev_tx_t`），且不释放 skb。
-* `kbox`（黑匣子）用 `VM_RESERVED 0x00080000`（实际是 `VM_LOCKONFAULT` 位），并在 panic/NMI 上下文里
-  做时间读取 + `udelay` + MMIO。该模块对应 iBMA 的"黑匣子"功能，默认不加载（`iBMA.ini` 中 `iBMA_kbox=false`）。
+| 位置 | 问题 | 修复 |
+|---|---|---|
+| `veth_drv/veth_hb.c` `veth_tx()` | 发送队列未就绪时返回 `BSP_ERR_NULL_POINTER`（非法 `netdev_tx_t`）且 skb 泄漏 | 释放 skb 并返回 `NETDEV_TX_OK`；该分支不可调用 `INC_STATIS_TX()`（宏会解引用 NULL 的 `ptx_queue[queue]`） |
+| `veth_drv/veth_hb.c` `veth_netdev_init()` | `alloc_netdev_mq()` 未判空即 `register_netdev()`；注册失败泄漏 netdev | 判空返回 `-ENOMEM`；失败路径补 `free_netdev()` |
+| `veth_drv/veth_hb.c` `veth_param_get_statics()` | netdev 未初始化时 sysfs 读取经 `netif_running(NULL)` 空指针 | 增加 `pnetdev == NULL` 提前返回 |
+| `kbox_drv/kbox_printk.c` `kbox_printk_exit()` | 先 `kfree` 再 `unregister_console`，use-after-free 窗口 | 先注销控制台再释放，并复位 `g_printk_init_ok` |
+| `kbox_drv/kbox_ram_op.c` mmap | `VM_RESERVED`（3.11 起删除、该位被复用为 `VM_LOCKONFAULT`）写错标志位 | 改用 `VM_IO \| VM_DONTEXPAND \| VM_DONTDUMP` |
+| `kbox_drv/kbox_main.c` | `/proc/kbox`（"已加载"标记）卸载时不清理 | 卸载与初始化失败路径补 `remove_proc_entry()` |
+| `edma_drv/edma_host.h` | 一段从未被引用的 `VM_*` 重定义 | 删除（消除 `redefined` 告警） |
+| `edma_drv/edma_queue.c` | `wait_done_dma_queue()` 无前置声明 | 改为 `static` |
+
+## 有意保留（未修改）
+
+以下几项**已知但故意不动**，因为它们要么需要真实硬件/流量验证，要么属于上游设计取舍：
+
+* `veth_tx()` 之后的发包主路径、DMA 环操作、`cdev_veth` 的共享内存环发布顺序 —— 缺少硬件验证不宜改。
+* `veth` 设了 `watchdog_timeo` 但没有 `ndo_tx_timeout` —— 正确实现需要复现"发送队列卡死"。
+* `USE_DMA` 未定义，`host_dma_transfer_without_list()` 为空实现 —— 上游默认行为，改动会影响数据传输。
+* `kbox` 在 panic/NMI 上下文做时间读取 + `udelay` + MMIO；MMIO 经 `int*` 传递；`/proc/kbox` 的权限模型。
+* `secure/`（libboundscheck）内部的实现细节。
+

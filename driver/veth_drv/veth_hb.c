@@ -226,6 +226,12 @@ static int veth_param_get_statics(char *buf, const struct kernel_param *kp)
         return 0;
     }
 
+    /* The sysfs attribute exists as soon as the module is loaded, but the netdev is
+       only created later; without this guard -> netif_running(NULL) dereferences NULL. */
+    if (g_bspveth_dev.pnetdev == NULL) {
+        return 0;
+    }
+
     GET_SYS_SECONDS(running_time);
 
     running_time -= g_bspveth_dev.init_time;
@@ -1231,8 +1237,16 @@ int veth_tx(struct sk_buff *skb, struct net_device *pstr_dev)
     u32 ul_ret = 0;
     int queue = 0;
 
+    /* netdev_tx_t contract: a non-OK value here (the old code returned the raw driver
+       error 0x0FFFF002) confuses the TX path, and the skb would be leaked. We drop the
+       packet and report it as consumed, like the !skb/!dev path below does.
+       NB: no INC_STATIS_TX() here - that macro dereferences ptx_queue[queue], which is
+       exactly what is NULL in this branch. */
     if (g_bspveth_dev.ptx_queue[queue] == NULL) {
-        return BSP_ERR_NULL_POINTER;
+        if (skb != NULL) {
+            dev_kfree_skb_any(skb);
+        }
+        return NETDEV_TX_OK;
     }
 
     VETH_LOG(DLOG_DEBUG, "===============enter==================\n");
@@ -1511,10 +1525,16 @@ static s32 veth_netdev_init(void)
 #else
     netdev = alloc_netdev_mq(sizeof(struct tag_pcie_comm_priv), BSPVETH_DEV_NAME, veth_netdev_func_init, 1);
 #endif
+    if (!netdev) {
+        VETH_LOG(DLOG_ERROR, "alloc_netdev_mq failed!\n");
+        return -ENOMEM;
+    }
+
     /* register netdev */
     l_ret = register_netdev(netdev);
     if (l_ret < 0) {
         VETH_LOG(DLOG_ERROR, "register_netdev failed!ret=%d\n", l_ret);
+        free_netdev(netdev);
 
         return -ENODEV;
     }

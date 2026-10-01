@@ -41,37 +41,12 @@
 #define from_timer(var, callback_timer, timer_fieldname) container_of(callback_timer, typeof(*var), timer_fieldname)
 #endif
 
-/* vm_flags in vm_area_struct, see mm_types.h. */
-#define VM_NONE 0x00000000
-#define VM_ARCH_1 0x01000000    /* Architecture-specific flag */
-#define VM_DONTDUMP 0x04000000  /* Do not include in the core dump */
-#define VM_MERGEABLE 0x80000000 /* KSM may merge identical pages */
-
-#if defined(CONFIG_X86)
-/* PAT reserves whole VMA at once (x86) */
-#define VM_PAT VM_ARCH_1
-#elif defined(CONFIG_PPC)
-#define VM_SAO VM_ARCH_1 /* Strong Access Ordering (powerpc) */
-#elif defined(CONFIG_PARISC)
-#define VM_GROWSUP VM_ARCH_1
-#elif defined(CONFIG_METAG)
-#define VM_GROWSUP VM_ARCH_1
-#elif defined(CONFIG_IA64)
-#define VM_GROWSUP VM_ARCH_1
-#elif !defined(CONFIG_MMU)
-#define VM_MAPPED_COPY VM_ARCH_1 /* T if mapped copy of data (nommu mmap) */
-#endif
-
-#ifndef VM_GROWSUP
-#define VM_GROWSUP VM_NONE
-#endif
-
-/* Bits set in the VMA until the stack is in its final location */
-#if (KERNEL_VERSION(6, 5, 0) <= LINUX_VERSION_CODE)
-#define VM_STACK_INCOMPLETE_SETUP (VM_RAND_READ | VM_SEQ_READ | VM_STACK_EARLY)
-#else
-#define VM_STACK_INCOMPLETE_SETUP (VM_RAND_READ | VM_SEQ_READ)
-#endif
+/*
+ * NOTE: an old block of VM_* re-definitions (VM_ARCH_1/VM_DONTDUMP/VM_MERGEABLE and the
+ * VM_PAT/VM_SAO/VM_GROWSUP/VM_STACK_INCOMPLETE_SETUP derivations) used to live here.
+ * Nothing in this driver referenced any of them, and re-defining the kernel's own macros
+ * only produced "redefined" warnings against include/linux/mm.h. Removed.
+ */
 
 #define REG_PCIE1_DMAREAD_ENABLE 0xa18
 #define SHIFT_PCIE1_DMAREAD_ENABLE 0
