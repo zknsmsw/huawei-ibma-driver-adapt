@@ -1,0 +1,9 @@
+Package: ibmadriver
+Version: 0.4.0
+Section: admin
+Priority: extra
+Depends:
+Maintainer: Huawei iBMA Software Team <e.support@huawei.com>
+Architecture: amd64
+Description: Kernnel Module Huawei iBMA driver.
+Homepage: http://support.huawei.com/enterprise

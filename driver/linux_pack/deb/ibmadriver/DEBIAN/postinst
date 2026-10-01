@@ -1,0 +1,43 @@
+#!/bin/bash
+
+echo "Installing... Please wait for a moment."
+
+KMOD_NAME=ibmadriver
+
+depmod -a
+
+update-initramfs -u -v -k $(uname -r) >/dev/null 2>&1
+
+ibmadrivers=("host_cdev_drv" "host_kbox_drv" "host_veth_drv" "cdev_veth_drv" "host_edma_drv")
+drivernum=0
+while [ ${drivernum} -lt ${#ibmadrivers[@]} ]; do
+    mods=( $(/sbin/lsmod | grep -wo "${ibmadrivers[${drivernum}]}") )
+    if [ "${mods}" == "${ibmadrivers[${drivernum}]}" ]; then
+        /sbin/rmmod "${ibmadrivers[${drivernum}]}" 2>&1
+        if [ "$?" -ne 0 ]; then
+            echo "Failed to uninstall the old ${ibmadrivers[${drivernum}]} kernel module."
+            echo "Please uninstall the old ${ibmadrivers[${drivernum}]} kernel module manually or reboot the system."
+        else
+            echo "Uninstall the old ${ibmadrivers[${drivernum}]} kernel module successfully."
+        fi
+    fi
+    let drivernum++
+done
+
+ibmadrivers=("host_edma_drv" "host_cdev_drv")
+drivernum=0
+while [ ${drivernum} -lt ${#ibmadrivers[@]} ]; do
+    mods=( $(/sbin/lsmod | grep -wo "${ibmadrivers[${drivernum}]}") )
+    if [ -z "${mods}" ]; then
+        /sbin/insmod "/lib/modules/$(uname -r)/updates/${KMOD_NAME}/${ibmadrivers[${drivernum}]}.ko" 2>&1
+        if [ "$?" -ne 0 ]; then
+            echo "Failed to install the new ${ibmadrivers[${drivernum}]} kernel module."
+            echo "Please install the new ${ibmadrivers[${drivernum}]} kernel module manually or reboot the system."
+        else
+            echo "Install the new ${ibmadrivers[${drivernum}]} kernel module successfully."
+        fi
+    fi
+    let drivernum++
+done
+
+echo "Install ibma_driver package successfully."

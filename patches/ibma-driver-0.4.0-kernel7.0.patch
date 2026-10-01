@@ -1,0 +1,364 @@
+--- a/iBMA_Driver-0.4.0/cdev_drv/Makefile
++++ b/iBMA_Driver-0.4.0/cdev_drv/Makefile
+@@ -11,9 +11,9 @@
+ endif
+ STACK_PROTECT ?= true
+ 
+-STDARG_H_FLAG = $(wildcard /usr/src/kernels/*/include/linux/stdarg.h >/dev/null 2>&1 \
+-                        /usr/src/kernels/*/include/linux/stdarg.h >/dev/null 2>&1 \
+-                        /usr/src/*/include/linux/stdarg.h >/dev/null)
++STDARG_H_FLAG = $(wildcard /lib/modules/*/build/include/linux/stdarg.h \
++                        /usr/src/kernels/*/include/linux/stdarg.h \
++                        /usr/src/*/include/linux/stdarg.h)
+ ifeq ($(STDARG_H_FLAG),)
+     HAVE_LINUX_STDARG_H_FLAG ?= false
+ else
+@@ -34,23 +34,23 @@
+ host_cdev_drv-objs += $(SECURE_DIR)vsprintf_s.o
+ 
+ ifdef DRV_VERSION
+-EXTRA_CFLAGS += -D DRV_VERSION=$(DRV_VERSION)
++ccflags-y += -D DRV_VERSION=$(DRV_VERSION)
+ endif
+ 
+ ifeq ($(STACK_PROTECT), true)
+-EXTRA_CFLAGS += -fstack-protector-all
++ccflags-y += -fstack-protector-all
+ endif
+ 
+-EXTRA_CFLAGS += -I$(obj) -I$(obj)/../../include/ -I$(obj)/../include/ -I$(obj)/../edma_drv
++ccflags-y += -I$(obj) -I$(obj)/../../include/ -I$(obj)/../include/ -I$(obj)/../edma_drv
+ 
+-EXTRA_CFLAGS += -I$(obj)/../secure/include/
+-EXTRA_CFLAGS += -Wformat=0
++ccflags-y += -I$(obj)/../secure/include/
++ccflags-y += -Wformat=0
+ ifeq "$(GCC_VERSION_GREATER_OR_EQUAL_7)" "1"
+-EXTRA_CFLAGS += -Wimplicit-fallthrough=3
++ccflags-y += -Wimplicit-fallthrough=3
+ endif
+ 
+ ifeq ($(HAVE_LINUX_STDARG_H_FLAG), true)
+-EXTRA_CFLAGS += -D HAVE_LINUX_STDARG_H
++ccflags-y += -D HAVE_LINUX_STDARG_H
+ endif
+ 
+ PWD       := $(shell pwd)
+--- a/iBMA_Driver-0.4.0/cdev_veth_drv/Makefile
++++ b/iBMA_Driver-0.4.0/cdev_veth_drv/Makefile
+@@ -17,9 +17,9 @@
+ endif
+ STACK_PROTECT ?= true
+ 
+-STDARG_H_FLAG = $(wildcard /usr/src/kernels/*/include/linux/stdarg.h >/dev/null 2>&1 \
+-                        /usr/src/kernels/*/include/linux/stdarg.h >/dev/null 2>&1 \
+-                        /usr/src/*/include/linux/stdarg.h >/dev/null)
++STDARG_H_FLAG = $(wildcard /lib/modules/*/build/include/linux/stdarg.h \
++                        /usr/src/kernels/*/include/linux/stdarg.h \
++                        /usr/src/*/include/linux/stdarg.h)
+ ifeq ($(STDARG_H_FLAG),)
+     HAVE_LINUX_STDARG_H_FLAG ?= false
+ else
+@@ -38,20 +38,20 @@
+ cdev_veth_drv-objs += $(SECURE_DIR)memcpy_s.o
+ 
+ ifeq ($(STACK_PROTECT), true)
+-EXTRA_CFLAGS += -fstack-protector-all
++ccflags-y += -fstack-protector-all
+ endif
+ 
+-EXTRA_CFLAGS += -Wformat=0 \
++ccflags-y += -Wformat=0 \
+                 -I$(obj)/../edma_drv -I$(obj)/../include/ -I$(obj)/../../include/
+-EXTRA_CFLAGS += -I$(obj)/../secure/include/
+-EXTRA_CFLAGS += -DCDEV_VETH_VERSION=$(DRV_VERSION)
+-EXTRA_CFLAGS += -Wformat=0
++ccflags-y += -I$(obj)/../secure/include/
++ccflags-y += -DCDEV_VETH_VERSION=$(DRV_VERSION)
++ccflags-y += -Wformat=0
+ ifeq "$(GCC_VERSION_GREATER_OR_EQUAL_7)" "1"
+-EXTRA_CFLAGS += -Wimplicit-fallthrough=3
++ccflags-y += -Wimplicit-fallthrough=3
+ endif
+ 
+ ifeq ($(HAVE_LINUX_STDARG_H_FLAG), true)
+-EXTRA_CFLAGS += -D HAVE_LINUX_STDARG_H
++ccflags-y += -D HAVE_LINUX_STDARG_H
+ endif
+ 
+ KBUILD_EXTRA_SYMBOLS+=$(BUILD_PWD)/edma_drv/Module.symvers
+--- a/iBMA_Driver-0.4.0/edma_drv/Makefile
++++ b/iBMA_Driver-0.4.0/edma_drv/Makefile
+@@ -11,9 +11,9 @@
+ endif
+ STACK_PROTECT ?= true
+ 
+-STDARG_H_FLAG = $(wildcard /usr/src/kernels/*/include/linux/stdarg.h >/dev/null 2>&1 \
+-                        /usr/src/kernels/*/include/linux/stdarg.h >/dev/null 2>&1 \
+-                        /usr/src/*/include/linux/stdarg.h >/dev/null)
++STDARG_H_FLAG = $(wildcard /lib/modules/*/build/include/linux/stdarg.h \
++                        /usr/src/kernels/*/include/linux/stdarg.h \
++                        /usr/src/*/include/linux/stdarg.h)
+ ifeq ($(STDARG_H_FLAG),)
+     HAVE_LINUX_STDARG_H_FLAG ?= false
+ else
+@@ -21,6 +21,17 @@
+ endif
+ 
+ SECURE_DIR ?= ../secure/src/
++
++# Kernel API feature probes: test the real headers of the kernel we build against,
++# so the driver also works with distro backports (e.g. PVE 6.14 has timer_delete_sync).
++HAVE_TIMER_DELETE_SYNC := $(shell grep -qsw timer_delete_sync $(KERNEL_DIR)/include/linux/timer.h 2>/dev/null && echo 1)
++HAVE_HRTIMER_SETUP := $(shell grep -qsw hrtimer_setup $(KERNEL_DIR)/include/linux/hrtimer.h 2>/dev/null && echo 1)
++ifneq ($(HAVE_TIMER_DELETE_SYNC),)
++ccflags-y += -DHAVE_TIMER_DELETE_SYNC
++endif
++ifneq ($(HAVE_HRTIMER_SETUP),)
++ccflags-y += -DHAVE_HRTIMER_SETUP
++endif
+ 
+ GCC_VERSION_GREATER_OR_EQUAL_7 ?= $(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 7)
+ 
+@@ -33,22 +44,22 @@
+ host_edma_drv-objs += $(SECURE_DIR)vsprintf_s.o
+ 
+ ifdef DRV_VERSION
+-EXTRA_CFLAGS += -D DRV_VERSION=$(DRV_VERSION)
++ccflags-y += -D DRV_VERSION=$(DRV_VERSION)
+ endif
+ 
+ ifeq ($(STACK_PROTECT), true)
+-EXTRA_CFLAGS += -fstack-protector-all
++ccflags-y += -fstack-protector-all
+ endif
+ 
+-EXTRA_CFLAGS += -I$(obj) -I$(obj)/../../include/ -I$(obj)/../include/
+-EXTRA_CFLAGS += -I$(obj)/../secure/include/
+-EXTRA_CFLAGS += -Wformat=0
++ccflags-y += -I$(obj) -I$(obj)/../../include/ -I$(obj)/../include/
++ccflags-y += -I$(obj)/../secure/include/
++ccflags-y += -Wformat=0
+ ifeq "$(GCC_VERSION_GREATER_OR_EQUAL_7)" "1"
+-EXTRA_CFLAGS += -Wimplicit-fallthrough=3
++ccflags-y += -Wimplicit-fallthrough=3
+ endif
+ 
+ ifeq ($(HAVE_LINUX_STDARG_H_FLAG), true)
+-EXTRA_CFLAGS += -D HAVE_LINUX_STDARG_H
++ccflags-y += -D HAVE_LINUX_STDARG_H
+ endif
+ 
+ PWD       := $(shell pwd)
+--- a/iBMA_Driver-0.4.0/edma_drv/bma_include.h
++++ b/iBMA_Driver-0.4.0/edma_drv/bma_include.h
+@@ -26,6 +26,7 @@
+ #include <linux/pci.h>
+ #include <linux/mutex.h>
+ #include <linux/interrupt.h> // tasklet
++#include <linux/timer.h>     // timer_setup/from_timer feature detection
+ #include <linux/version.h>
+ #include <linux/kernel.h>
+ #include <linux/module.h>
+@@ -96,7 +97,10 @@
+     } specific;
+ };
+ 
+-#if defined(timer_setup) && defined(from_timer)
++/* Kernel >= 6.16 renamed from_timer() to timer_container_of(); probe both so that
++   HAVE_TIMER_SETUP is still detected there (otherwise the removed setup_timer()
++   path is compiled and the build fails hard). */
++#if defined(timer_setup) && (defined(from_timer) || defined(timer_container_of))
+ #define HAVE_TIMER_SETUP
+ #endif
+ 
+--- a/iBMA_Driver-0.4.0/edma_drv/edma_host.c
++++ b/iBMA_Driver-0.4.0/edma_drv/edma_host.c
+@@ -1461,8 +1461,12 @@
+ 
+     init_edma_sq_cq(edma_host);
+ 
++#ifdef HAVE_HRTIMER_SETUP
++    hrtimer_setup(&edma_host->heartbeat_timer, edma_host_heartbeat_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
++#else
+     hrtimer_init(&edma_host->heartbeat_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+     edma_host->heartbeat_timer.function = edma_host_heartbeat_timer;
++#endif
+     hrtimer_start(&edma_host->heartbeat_timer, ns_to_ktime(HEARTBEAT_TIMER_INTERVAL_CHECK_NS), HRTIMER_MODE_REL);
+ 
+     pnm = (struct notify_msg *)edma_host->edma_flag;
+@@ -1500,10 +1504,17 @@
+     kfree(edma_host->msg_send_buf);
+     edma_host->msg_send_buf = NULL;
+ #ifdef EDMA_TIMER
++#ifdef HAVE_TIMER_DELETE_SYNC
++    (void)timer_delete_sync(&edma_host->timer);
++#ifdef USE_DMA
++    (void)timer_delete_sync(&edma_host->dma_timer);
++#endif
++#else
+     (void)del_timer_sync(&edma_host->timer);
+ #ifdef USE_DMA
+     (void)del_timer_sync(&edma_host->dma_timer);
+ #endif
++#endif
+ 
+ #else
+     kthread_stop(edma_host->edma_thread);
+--- a/iBMA_Driver-0.4.0/kbox_drv/Makefile
++++ b/iBMA_Driver-0.4.0/kbox_drv/Makefile
+@@ -17,13 +17,19 @@
+ endif
+ STACK_PROTECT ?= true
+ 
+-STDARG_H_FLAG = $(wildcard /usr/src/kernels/*/include/linux/stdarg.h >/dev/null 2>&1 \
+-                        /usr/src/kernels/*/include/linux/stdarg.h >/dev/null 2>&1 \
+-                        /usr/src/*/include/linux/stdarg.h >/dev/null)
++STDARG_H_FLAG = $(wildcard /lib/modules/*/build/include/linux/stdarg.h \
++                        /usr/src/kernels/*/include/linux/stdarg.h \
++                        /usr/src/*/include/linux/stdarg.h)
+ ifeq ($(STDARG_H_FLAG),)
+     HAVE_LINUX_STDARG_H_FLAG ?= false
+ else
+     HAVE_LINUX_STDARG_H_FLAG ?= true
++endif
++
++# Kernel API feature probe: x86 MSR safe-read helper was renamed (rdmsrl_safe -> rdmsrq_safe).
++HAVE_MSR_Q_SAFE := $(shell grep -qsw rdmsrq_safe $(KERNEL_DIR)/arch/x86/include/asm/msr.h 2>/dev/null && echo 1)
++ifneq ($(HAVE_MSR_Q_SAFE),)
++ccflags-y += -DHAVE_MSR_Q_SAFE
+ endif
+ 
+ GCC_VERSION_GREATER_OR_EQUAL_7 ?= $(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 7)
+@@ -39,25 +45,25 @@
+ 
+ 
+ ifdef DRV_VERSION
+-EXTRA_CFLAGS += -D DRV_VERSION=$(DRV_VERSION)
++ccflags-y += -D DRV_VERSION=$(DRV_VERSION)
+ endif
+ 
+ ifeq ($(HAVE_LINUX_STDARG_H_FLAG), true)
+-EXTRA_CFLAGS += -D HAVE_LINUX_STDARG_H
++ccflags-y += -D HAVE_LINUX_STDARG_H
+ endif
+ 
+ ifeq ($(STACK_PROTECT), true)
+-EXTRA_CFLAGS += -fstack-protector-all
++ccflags-y += -fstack-protector-all
+ endif
+ 
+-EXTRA_CFLAGS += -I$(obj) -I$(obj)/../edma_drv -I$(obj)/../../include/
+-EXTRA_CFLAGS += -I$(obj)/../secure/include/
+-EXTRA_CFLAGS += -I$(obj)/../include/
+-EXTRA_CFLAGS += -Wformat=0
+-EXTRA_CFLAGS += -I$(obj) -I$(obj)/../edma_drv
+-EXTRA_CFLAGS += -Wformat=0
++ccflags-y += -I$(obj) -I$(obj)/../edma_drv -I$(obj)/../../include/
++ccflags-y += -I$(obj)/../secure/include/
++ccflags-y += -I$(obj)/../include/
++ccflags-y += -Wformat=0
++ccflags-y += -I$(obj) -I$(obj)/../edma_drv
++ccflags-y += -Wformat=0
+ ifeq "$(GCC_VERSION_GREATER_OR_EQUAL_7)" "1"
+-EXTRA_CFLAGS += -Wimplicit-fallthrough=3
++ccflags-y += -Wimplicit-fallthrough=3
+ endif
+ 
+ 
+--- a/iBMA_Driver-0.4.0/kbox_drv/kbox_mce.c
++++ b/iBMA_Driver-0.4.0/kbox_drv/kbox_mce.c
+@@ -187,7 +187,11 @@
+ #if (KERNEL_VERSION(2, 6, 18) >= LINUX_VERSION_CODE)
+     rdmsrl(ulmsr, ullv);
+ #else
++#ifdef HAVE_MSR_Q_SAFE
++    if (rdmsrq_safe(ulmsr, &ullv)) {
++#else
+     if (rdmsrl_safe(ulmsr, &ullv)) {
++#endif
+         (void)kbox_dump_painc_info("mce: Unable to read msr %d!\n", ulmsr);
+         ullv = 0;
+     }
+--- a/iBMA_Driver-0.4.0/veth_drv/Makefile
++++ b/iBMA_Driver-0.4.0/veth_drv/Makefile
+@@ -11,9 +11,9 @@
+ endif
+ STACK_PROTECT ?= true
+ 
+-STDARG_H_FLAG = $(wildcard /usr/src/kernels/*/include/linux/stdarg.h >/dev/null 2>&1 \
+-                        /usr/src/kernels/*/include/linux/stdarg.h >/dev/null 2>&1 \
+-                        /usr/src/*/include/linux/stdarg.h >/dev/null)
++STDARG_H_FLAG = $(wildcard /lib/modules/*/build/include/linux/stdarg.h \
++                        /usr/src/kernels/*/include/linux/stdarg.h \
++                        /usr/src/*/include/linux/stdarg.h)
+ ifeq ($(STDARG_H_FLAG),)
+     HAVE_LINUX_STDARG_H_FLAG ?= false
+ else
+@@ -24,25 +24,25 @@
+ 
+ GCC_VERSION_GREATER_OR_EQUAL_7 ?= $(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 7)
+ 
+-EXTRA_CFLAGS += $(DEBFLAGS)
+-EXTRA_CFLAGS += -I..
++ccflags-y += $(DEBFLAGS)
++ccflags-y += -I..
+ ifdef DRV_VERSION
+-EXTRA_CFLAGS += -D DRV_VERSION=$(DRV_VERSION)
++ccflags-y += -D DRV_VERSION=$(DRV_VERSION)
+ endif
+ 
+ ifeq ($(STACK_PROTECT), true)
+-EXTRA_CFLAGS += -fstack-protector-all
++ccflags-y += -fstack-protector-all
+ endif
+ 
+-EXTRA_CFLAGS += -I$(obj) -I$(obj)/../../include/ -I$(obj)/../include/ -I$(obj)/../edma_drv
+-EXTRA_CFLAGS += -I$(obj)/../secure/include/
+-EXTRA_CFLAGS += -Wformat=0
++ccflags-y += -I$(obj) -I$(obj)/../../include/ -I$(obj)/../include/ -I$(obj)/../edma_drv
++ccflags-y += -I$(obj)/../secure/include/
++ccflags-y += -Wformat=0
+ ifeq "$(GCC_VERSION_GREATER_OR_EQUAL_7)" "1"
+-EXTRA_CFLAGS += -Wimplicit-fallthrough=3
++ccflags-y += -Wimplicit-fallthrough=3
+ endif
+ 
+ ifeq ($(HAVE_LINUX_STDARG_H_FLAG), true)
+-EXTRA_CFLAGS += -D HAVE_LINUX_STDARG_H
++ccflags-y += -D HAVE_LINUX_STDARG_H
+ endif
+ 
+ # call from kernel build system
+@@ -82,7 +82,7 @@
+ 	$(MAKE) -C $(KERNEL_DIR) M=$(PWD) clean
+ 
+ depend .depend dep:
+-	$(CC) $(EXTRA_CFLAGS) -M *.c > .depend
++	$(CC) $(ccflags-y) -M *.c > .depend
+ 
+ install: default
+ 	mkdir -p $(PREFIX)/$(MODDIR)
+--- a/iBMA_Driver-0.4.0/veth_drv/veth_hb.c
++++ b/iBMA_Driver-0.4.0/veth_drv/veth_hb.c
+@@ -1092,11 +1092,19 @@
+ 
+ };
+ 
++/* veth_tx() returns int while .ndo_start_xmit requires netdev_tx_t. Modern kbuild
++ * compiles with -Werror=incompatible-pointer-types, so route the entry through a
++ * correctly typed wrapper. veth_tx() itself (and its return value) is unchanged. */
++static netdev_tx_t veth_tx_ndo(struct sk_buff *skb, struct net_device *pstr_dev)
++{
++    return (netdev_tx_t)veth_tx(skb, pstr_dev);
++}
++
+ static const struct net_device_ops veth_ops = {
+     .ndo_open = veth_open,
+     .ndo_stop = veth_close,
+     .ndo_set_config = veth_config,
+-    .ndo_start_xmit = veth_tx,
++    .ndo_start_xmit = veth_tx_ndo,
+     .ndo_do_ioctl = veth_ioctl,
+     .ndo_get_stats = veth_stats,
+     .ndo_set_mac_address = veth_mac_set,

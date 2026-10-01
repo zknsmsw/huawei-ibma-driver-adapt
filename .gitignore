@@ -1,0 +1,28 @@
+# 构建产物
+*.o
+*.o.*
+*.ko
+*.ko.*
+*.mod
+*.mod.c
+*.symvers
+*.order
+*.unsigned
+.tmp_versions/
+.tmp_*/
+.*.cmd
+.depend
+depend
+# 打包产物
+*.deb
+*.rpm
+*.tar.gz
+*.tar.bz2
+# 脚本工作目录
+build/
+out/
+.build/
+# 编辑器
+.vscode/
+.idea/
+*.swp
